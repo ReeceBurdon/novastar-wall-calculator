@@ -1,5 +1,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="app-version" content="1.1.0">
 <title>NovaStar Wall Calculator</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
@@ -197,7 +198,7 @@ body.standalone .standalone-only{display:inline-flex!important}
 
 <div class="topbar">
   <h1>NovaStar Wall Calculator</h1>
-  <span class="sub">Data &amp; power routing · line loading · test cards</span>
+  <span class="sub">Data &amp; power routing · line loading · test cards · v1.1.0</span>
   <span class="spacer"></span>
   <label class="proj-pick" aria-label="Project"><select id="projSel"></select></label>
   <button class="btn primary" id="btnNewProj" type="button">New project</button>
@@ -312,7 +313,9 @@ body.standalone .standalone-only{display:inline-flex!important}
       <div class="toolbar" id="dTools" hidden>
         <label style="flex-direction:row;align-items:center;gap:6px;color:var(--ink)">Drawing<select id="dActive"></select></label>
         <button class="btn sm" type="button" data-act="new">New line</button>
-        <button class="btn sm" type="button" data-act="undo">Undo panel</button>
+        <button class="btn sm" type="button" data-act="hundo" title="Undo (⌘Z / Ctrl+Z)">Undo</button>
+        <button class="btn sm" type="button" data-act="hredo" title="Redo (⇧⌘Z / Ctrl+Y)">Redo</button>
+        <button class="btn sm" type="button" data-act="undo">Remove last panel</button>
         <button class="btn sm" type="button" data-act="clear">Clear line</button>
         <button class="btn sm danger" type="button" data-act="del">Delete line</button>
         <button class="btn sm" type="button" data-act="seed" id="dSeed">Restart from auto</button>
@@ -330,7 +333,9 @@ body.standalone .standalone-only{display:inline-flex!important}
       <div class="toolbar pw" id="pTools" hidden>
         <label style="flex-direction:row;align-items:center;gap:6px;color:var(--ink)">Drawing<select id="pActive"></select></label>
         <button class="btn sm" type="button" data-act="new">New circuit</button>
-        <button class="btn sm" type="button" data-act="undo">Undo panel</button>
+        <button class="btn sm" type="button" data-act="hundo" title="Undo (⌘Z / Ctrl+Z)">Undo</button>
+        <button class="btn sm" type="button" data-act="hredo" title="Redo (⇧⌘Z / Ctrl+Y)">Redo</button>
+        <button class="btn sm" type="button" data-act="undo">Remove last panel</button>
         <button class="btn sm" type="button" data-act="clear">Clear circuit</button>
         <button class="btn sm danger" type="button" data-act="del">Delete circuit</button>
         <button class="btn sm" type="button" data-act="seed">Restart from auto</button>
@@ -353,6 +358,9 @@ body.standalone .standalone-only{display:inline-flex!important}
                   <option value="grid">Engineering grid</option>
                   <option value="bars">Colour bars</option>
                   <option value="solid">Solid colour</option>
+                  <option value="align">Seam &amp; alignment grid</option>
+                  <option value="gamma">Gamma &amp; greyscale ramps</option>
+                  <option value="edges">Edge &amp; overscan markers</option>
                 </optgroup>
                 <optgroup label="Moving patterns">
                   <option value="mbars">Scrolling colour bars</option>
@@ -701,7 +709,22 @@ function addCell(k,key){const lines=CUSTOM()[k];if(!lines.length){lines.push({ce
   const a=lines[ACTIVE[k]];if(!a||a.cells.includes(key))return false;
   lines.forEach(l=>{const i=l.cells.indexOf(key);if(i>=0)l.cells.splice(i,1)});a.cells.push(key);return true}
 function removeCell(k,key){CUSTOM()[k].forEach(l=>{const i=l.cells.indexOf(key);if(i>=0)l.cells.splice(i,1)})}
-function toolAction(k,act){const L=CUSTOM()[k];
+/* undo / redo for drawn paths: whole-custom snapshots per screen, kept for this session */
+const HIST={};
+const hist=()=>HIST[cur.id]||(HIST[cur.id]={u:[],r:[]});
+function snap(){const h=hist(),j=JSON.stringify(cur.custom);if(h.u.length&&h.u[h.u.length-1]===j)return;h.u.push(j);if(h.u.length>150)h.u.shift();h.r=[]}
+function histTrim(){const h=hist();if(h.u.length&&h.u[h.u.length-1]===JSON.stringify(cur.custom))h.u.pop()}
+function histStep(dir){const h=hist(),from=dir<0?h.u:h.r,to=dir<0?h.r:h.u;if(!from.length)return false;
+  to.push(JSON.stringify(cur.custom));cur.custom=JSON.parse(from.pop());compute();return true}
+function undoAvail(){const h=hist();document.querySelectorAll('[data-act=hundo]').forEach(b=>b.disabled=!h.u.length);document.querySelectorAll('[data-act=hredo]').forEach(b=>b.disabled=!h.r.length)}
+function drawingActive(){if(tabOn('tab-data'))return isCustom(dataKey());if(tabOn('tab-power'))return isCustom('p');return false}
+function typing(){const a=document.activeElement;return a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'||a.tagName==='SELECT'||a.isContentEditable)}
+window.nsUndo=()=>!typing()&&drawingActive()&&histStep(-1);
+window.nsRedo=()=>!typing()&&drawingActive()&&histStep(1);
+if(!/Electron/.test(navigator.userAgent))document.addEventListener('keydown',e=>{if(!(e.metaKey||e.ctrlKey))return;const k=e.key.toLowerCase();
+  if(k==='z'&&!e.shiftKey){if(window.nsUndo())e.preventDefault()}else if((k==='z'&&e.shiftKey)||k==='y'){if(window.nsRedo())e.preventDefault()}});
+function toolAction(k,act){if(act==='hundo'){histStep(-1);return}if(act==='hredo'){histStep(1);return}
+  snap();const L=CUSTOM()[k];
   if(act==='new'){L.push({cells:[],proc:null,port:null});ACTIVE[k]=L.length-1}
   else if(act==='undo'){L[ACTIVE[k]]&&L[ACTIVE[k]].cells.pop()}
   else if(act==='clear'){if(L[ACTIVE[k]])L[ACTIVE[k]].cells=[]}
@@ -780,6 +803,7 @@ function statsHTML(r){const g=gcd(r.W,r.H)||1,wm=r.cols*r.mmW/1000,hm=r.rows*r.m
     ['Main ports',`${used} / ${r.mainPorts}`,`${r.mains.length} main · ${r.backs.length} backup proc.`,'data'],
     ['Power circuits',`${r.powerLines.length} × ${r.A}A`,`${r.phases===3?'Three':'Single'}-phase`,'pwr'],
     ['Max load',`${fmt(r.n*r.maxW/1000,1)} kW`,`Typ ${fmt(r.n*r.typW/1000,1)} kW`,'pwr'],
+    ['Heat output',`${fmt(r.n*r.maxW*3.412)} BTU/h`,`Typ ${fmt(r.n*r.typW*3.412)} BTU/h`,''],
     ['Weight',`${fmt(r.n*r.kg)} kg`,`${fmt(r.kg,1)} kg/panel`,'']
   ].map(([k,v,s,c])=>`<div class="stat ${c}"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('')}
 function meter(p,head){const pc=Math.round(p*100),hp=head!==undefined?head:p,cls=p>1||hp>1?'bad':hp>0.9?'warn':'';
@@ -811,7 +835,7 @@ function phaseHTML(r){const ph=r.phases===3?['L1','L2','L3']:['L1'];
     `<div class="phase"><div class="k">Supply needed</div><div class="v">${r.supplyRating?r.supplyRating+'A':'—'}</div><div class="s">${r.phases===3?'3φ':'1φ'} at max power</div></div>`}
 
 function toolbar(k,on,tbId,selId,stId,lines){
-  const tb=$(tbId);tb.hidden=!on;if(!on)return;
+  const tb=$(tbId);tb.hidden=!on;if(!on)return;if(!painting)histTrim();undoAvail();
   $(selId).innerHTML=lines.map((l,i)=>`<option value="${i}">${esc(l.label)} (${l.cells.length})</option>`).join('');$(selId).value=ACTIVE[k];
   const l=lines[ACTIVE[k]],un=k==='d'?R.dUn:k==='b'?R.bUn:R.pUn;let s='';
   if(l){if(k!=='p')s=`<b>${esc(l.label)}</b> · ${l.cells.length} panels · ${fmt(l.px)} px · <span class="${l.over?'over':''}">${Math.round(l.pct*100)}% of port</span> · room for ${Math.max(0,R.dPer-l.cells.length)} more`;
@@ -845,7 +869,7 @@ let painting=null;
 function planKey(e,wrap){const el=document.elementFromPoint(e.clientX,e.clientY);const cell=el&&el.closest&&el.closest('[data-k]');return cell&&wrap.contains(cell)&&cell.tagName==='rect'?cell.dataset.k:null}
 [['data','dataPlan'],['p','powerPlan']].forEach(([which,id])=>{const wrap=$(id),K=()=>which==='data'?dataKey():'p';
   wrap.addEventListener('pointerdown',e=>{const k=K();if(!isCustom(k))return;const key=planKey(e,wrap);if(!key)return;e.preventDefault();
-    if(e.shiftKey||e.button===2){removeCell(k,key);compute();return}
+    snap();if(e.shiftKey||e.button===2){removeCell(k,key);compute();return}
     painting={k,wrap};if(addCell(k,key))compute()});
   wrap.addEventListener('contextmenu',e=>{if(isCustom(K()))e.preventDefault()})});
 window.addEventListener('pointermove',e=>{if(!painting)return;const key=planKey(e,painting.wrap);if(key&&addCell(painting.k,key))compute()});
@@ -854,11 +878,11 @@ $('dTools').addEventListener('click',e=>{const b=e.target.closest('[data-act]');
 $('pTools').addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(b)toolAction('p',b.dataset.act)});
 $('dActive').addEventListener('change',e=>{ACTIVE[dataKey()]=+e.target.value;compute()});
 $('pActive').addEventListener('change',e=>{ACTIVE.p=+e.target.value;compute()});
-$('dataTable').addEventListener('change',e=>{const sel=e.target.closest('select[data-f]');if(!sel)return;const k=sel.dataset.k,i=+sel.dataset.line,l=cur.custom[k][i];if(!l)return;
+$('dataTable').addEventListener('change',e=>{const sel=e.target.closest('select[data-f]');if(!sel)return;const k=sel.dataset.k,i=+sel.dataset.line,l=cur.custom[k][i];if(!l)return;snap();
   if(sel.dataset.f==='proc')l.proc=sel.value||null;else l.port=sel.value?parseInt(sel.value):null;ACTIVE[k]=i;compute()});
 $('dataTable').addEventListener('click',e=>{if(e.target.closest('select'))return;const k=dataKey();if(!isCustom(k))return;const tr=e.target.closest('tr[data-line]');if(tr){ACTIVE[k]=+tr.dataset.line;compute()}});
 $('powerTable').addEventListener('click',e=>{if(!isCustom('p'))return;const tr=e.target.closest('tr[data-line]');if(tr){ACTIVE.p=+tr.dataset.line;compute()}});
-function setRouting(which,custom){
+function setRouting(which,custom){snap();
   if(which==='p'){$('pPattern').value=custom?'custom':'snake';if(custom&&!cur.custom.p.some(l=>l.cells.length))seedCustom('p')}
   else if(dataKey()==='d'){$('dPattern').value=custom?'custom':'snake';if(custom&&!cur.custom.d.some(l=>l.cells.length))seedCustom('d')}
   else{const hasB=cur.procs.some(p=>p.role==='backup');
@@ -879,7 +903,7 @@ function renderScreens(){
   $('screens').innerHTML=project.screens.map((s,i)=>{const t=totals[i];return `<button type="button" class="scr" data-i="${i}" aria-current="${i===project.active}"><b>${esc(s.jobScreen||'Screen '+(i+1))}</b><span>${t.cols}×${t.rows} · ${fmt(t.W)}×${fmt(t.H)}</span></button>`}).join('')+
     `<div class="screen-actions"><button class="btn sm" type="button" id="scrAdd">Add screen</button><button class="btn sm" type="button" id="scrDup">Duplicate</button><button class="btn sm danger" type="button" id="scrDel" ${project.screens.length<2?'disabled':''}>Delete screen</button></div>`;
   const sum=(f)=>totals.reduce((a,t)=>a+f(t),0);
-  $('projTotal').textContent=project.screens.length>1?`Project: ${project.screens.length} screens · ${fmt(sum(t=>t.n))} panels · ${fmt(sum(t=>t.n*t.maxW)/1000,1)} kW max (${fmt(sum(t=>t.n*t.typW)/1000,1)} typ) · ${sum(t=>t.mains.length)} main + ${sum(t=>t.backs.length)} backup processors · ${sum(t=>t.powerLines.length)} circuits · ${fmt(sum(t=>t.n*t.kg))} kg`:'';
+  $('projTotal').textContent=project.screens.length>1?`Project: ${project.screens.length} screens · ${fmt(sum(t=>t.n))} panels · ${fmt(sum(t=>t.n*t.maxW)/1000,1)} kW max (${fmt(sum(t=>t.n*t.typW)/1000,1)} typ) · ${fmt(sum(t=>t.n*t.maxW)*3.412)} BTU/h max · ${sum(t=>t.mains.length)} main + ${sum(t=>t.backs.length)} backup processors · ${sum(t=>t.powerLines.length)} circuits · ${fmt(sum(t=>t.n*t.kg))} kg`:'';
 }
 function switchScreen(i){readFields();project.active=i;cur=project.screens[i];ACTIVE.d=ACTIVE.b=ACTIVE.p=0;writeFields();compute();if($('tab-card').classList.contains('active'))buildCard()}
 $('screens').addEventListener('click',e=>{
@@ -960,12 +984,46 @@ function renderScreenCard(r,s){
       x.fillStyle=p?`hsl(${p.l.color},70%,${p.j%2?28:34}%)`:'#1a1a1a';x.fillRect(X,Y+ph/2,pw,ph/2)}
     else if(mapFor[mode]){const o=mapFor[mode][key];x.fillStyle=o?`hsl(${o.l.color},70%,${o.j%2?(wiring?28:34):(wiring?34:42)}%)`:'#222';x.fillRect(X,Y,pw,ph)}}
 
-  const outlines=mode!=='solid'||labels;
+  const outlines=(mode!=='solid'&&mode!=='align'&&mode!=='gamma'&&mode!=='edges')||labels;
   if(outlines){x.strokeStyle=moving?'rgba(0,0,0,.55)':mode==='bars'?'rgba(0,0,0,.6)':mode==='solid'?(contrast(solid)==='#000'?'rgba(0,0,0,.35)':'rgba(255,255,255,.35)'):'#9a9a9a';x.lineWidth=1;x.beginPath();
     for(let c=0;c<=r.cols;c++){const X=Math.min(W-0.5,Math.round(c*pw)+0.5);x.moveTo(X,0);x.lineTo(X,H)}
     for(let rr=0;rr<=r.rows;rr++){const Y=Math.min(H-0.5,Math.round(rr*ph)+0.5);x.moveTo(0,Y);x.lineTo(W,Y)}
     x.stroke()}
 
+  const late=[];
+  if(mode==='align'){
+    // 1px fine grid every 16 px, each panel's top/left edge pixels red and bottom/right green, so a step or gap shows as a broken red|green pair
+    x.fillStyle='#202020';for(let X=0;X<W;X+=16)x.fillRect(X,0,1,H);for(let Y=0;Y<H;Y+=16)x.fillRect(0,Y,W,1);
+    for(let rr=0;rr<r.rows;rr++)for(let c=0;c<r.cols;c++){const X=Math.round(c*pw),Y=Math.round(rr*ph),X2=Math.round((c+1)*pw),Y2=Math.round((rr+1)*ph),w=X2-X,h=Y2-Y;
+      x.fillStyle='#ff0000';x.fillRect(X,Y,w,1);x.fillRect(X,Y,1,h);x.fillStyle='#00ff00';x.fillRect(X,Y2-1,w,1);x.fillRect(X2-1,Y,1,h);
+      const cx=Math.round(X+w/2),cy=Math.round(Y+h/2),a=Math.max(4,Math.round(m*0.06));x.fillStyle='#fff';x.fillRect(cx-a,cy,a*2+1,1);x.fillRect(cx,cy-a,1,a*2+1)}
+    // continuous 45° diagonals: a kink where they cross a seam means the panels are offset
+    x.strokeStyle='rgba(255,255,255,.85)';x.lineWidth=1;x.beginPath();const step=Math.max(8,Math.round(pw));
+    for(let k=-H;k<W+H;k+=step){x.moveTo(k+0.5,0);x.lineTo(k+H+0.5,H);x.moveTo(k+0.5,H);x.lineTo(k+H+0.5,0)}x.stroke();
+  }
+  if(mode==='gamma'){
+    const band=H*0.13,ramps=[[255,0,0],[0,255,0],[0,0,255],[255,255,255]];
+    ramps.forEach(([R1,G1,B1],i)=>{const g=x.createLinearGradient(0,0,W,0);g.addColorStop(0,'#000');g.addColorStop(1,`rgb(${R1},${G1},${B1})`);x.fillStyle=g;x.fillRect(0,i*band,W,band)});
+    let y=band*4;const sh=H*0.16;for(let i=0;i<32;i++){const v=Math.round(i*255/31);x.fillStyle=`rgb(${v},${v},${v})`;x.fillRect(Math.floor(i*W/32),y,Math.ceil(W/32)+1,sh)}
+    y+=sh;const dh=H-y;for(let i=0;i<=16;i++){x.fillStyle=`rgb(${i},${i},${i})`;x.fillRect(Math.floor(i*W/17),y,Math.ceil(W/17)+1,dh)}
+    for(let i=0;i<=16;i++){x.fillStyle=`rgb(${255-i},${255-i},${255-i})`;x.fillRect(Math.floor(i*W/17)+Math.round(W/34)-Math.round(W/80),y+dh*0.55,Math.round(W/40),dh*0.35)}
+    late.push(()=>{const fs=Math.max(10,Math.round(Math.min(band*0.3,W/60)));x.font=`600 ${fs}px ${FONT_M}`;x.textBaseline='top';x.textAlign='left';
+      const tag=(t,tx,ty,col)=>{const tw=x.measureText(t).width;x.fillStyle='rgba(0,0,0,.75)';x.fillRect(tx-fs*0.3,ty-fs*0.2,tw+fs*0.6,fs*1.4);x.fillStyle=col;x.fillText(t,tx,ty)};
+      ['RED 0 → 255','GREEN 0 → 255','BLUE 0 → 255','WHITE 0 → 255'].forEach((t,i)=>tag(t,fs*0.6,i*band+fs*0.4,'#fff'));
+      tag('32-step greyscale',fs*0.6,band*4+fs*0.4,'#fff');tag('Shadow detail 0–16 · lower squares: highlights 255–239',fs*0.6,y+fs*0.4,'#ccc');
+      x.textAlign='center';for(let i=0;i<=16;i++){x.fillStyle='#777';x.fillText(String(i),Math.floor(i*W/17)+W/34,y+dh*0.32)}});
+  }
+  if(mode==='edges'){
+    const marks=[[0,'#ffffff'],[1,'#ff0000'],[2,'#00ff00'],[4,'#0000ff'],[8,'#ffff00'],[16,'#00ffff'],[32,'#ff00ff']];
+    marks.forEach(([i,c])=>{x.strokeStyle=c;x.lineWidth=1;x.strokeRect(i+0.5,i+0.5,W-2*i-1,H-2*i-1)});
+    const a=Math.max(12,Math.round(Math.min(W,H)*0.08));x.fillStyle='#fff';
+    [[48,48,1,1],[W-48,48,-1,1],[48,H-48,1,-1],[W-48,H-48,-1,-1]].forEach(([px,py,dx,dy])=>{x.beginPath();x.moveTo(px-dx*36,py-dy*36);x.lineTo(px-dx*36+dx*a,py-dy*36);x.lineTo(px-dx*36,py-dy*36+dy*a);x.closePath();x.fill()});
+    x.strokeStyle='#fff';x.beginPath();x.moveTo(Math.round(W/2)+0.5,H/2-a);x.lineTo(Math.round(W/2)+0.5,H/2+a);x.moveTo(W/2-a,Math.round(H/2)+0.5);x.lineTo(W/2+a,Math.round(H/2)+0.5);x.stroke();
+    late.push(()=>{const fs=Math.max(10,Math.min(Math.round(W*0.022),Math.round(H*0.6/((marks.length+1.4)*1.5)))),rowH=fs*1.5,bw=fs*17,bh=rowH*(marks.length+1.4),bx=W/2-bw/2,by=H/2-bh/2;
+      x.fillStyle='rgba(0,0,0,.9)';x.fillRect(bx,by,bw,bh);x.strokeStyle='#fff';x.lineWidth=1;x.strokeRect(bx+0.5,by+0.5,bw,bh);
+      x.font=`700 ${fs}px ${FONT_D}`;x.textAlign='left';x.textBaseline='middle';x.fillStyle='#fff';x.fillText('Edge lines, inset from the raster edge',bx+fs*0.6,by+rowH*0.75);
+      x.font=`500 ${Math.round(fs*0.85)}px ${FONT_M}`;marks.forEach(([i,c],n)=>{const yy=by+rowH*(n+1.75);x.fillStyle=c;x.fillRect(bx+fs*0.6,yy-fs*0.3,fs*1.4,fs*0.6);x.fillStyle='#fff';x.fillText(i===0?'0 px: the outermost pixel':`${i} px in`,bx+fs*2.4,yy)})});
+  }
   if(mode==='grid'){
     x.strokeStyle='#fff';x.lineWidth=Math.max(1,Math.round(Math.min(W,H)/600));
     x.beginPath();x.moveTo(0,0);x.lineTo(W,H);x.moveTo(W,0);x.lineTo(0,H);x.moveTo(W/2,0);x.lineTo(W/2,H);x.moveTo(0,H/2);x.lineTo(W,H/2);x.stroke();
@@ -990,6 +1048,7 @@ function renderScreenCard(r,s){
       else{x.font=`600 ${Math.round(m*0.17)}px ${FONT_D}`;x.fillText(cellName(c,rr),cx,cy-(d?m*0.07:0));
         if(d){x.font=`400 ${Math.round(m*0.1)}px ${FONT_M}`;x.globalAlpha=.75;x.fillText(d.l.label+' #'+(d.j+1),cx,cy+m*0.14);x.globalAlpha=1}}
     }x.shadowBlur=0;x.shadowColor='transparent'}
+  late.forEach(f=>f());
 
   if(mode==='wdata')drawRoute(x,r.dataLines,pw,ph,m,0,'#fff',false);
   if(mode==='wbackup')drawRoute(x,r.backupLines,pw,ph,m,0,'#ffd23f',true);

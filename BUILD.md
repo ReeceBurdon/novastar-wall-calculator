@@ -9,7 +9,7 @@
 | PWA folder | Wrap in a proper `<head>` with manifest + service worker; swap the CDN muxer for local `mp4-muxer.js` |
 | Mac DMG (arm64) | Wrap like the PWA but with local fonts (Fontsource woff2) and a CSP; Electron shell below |
 
-Current version: **1.0.0** (2 Oct 2026).
+Current version: **1.1.0** (2 Oct 2026).
 
 ## Mac build pipeline (runs on Linux, no Mac needed)
 
@@ -71,6 +71,12 @@ app.on('window-all-closed',()=>{if(process.platform!=='darwin')app.quit()});
 3. Republish the artifact, rebuild the PWA folder and DMG.
 4. Update this Project's copy of the HTML and this file.
 
+## Mac app updates
+
+From 1.1.0 the Mac app updates itself. `tools/build_mac.py` writes `docs/app/` (page, fonts, MP4 muxer, `version.txt`). On launch, and via *Check for Updates…* in the app menu, the app compares `version.txt` with its own `<meta name="app-version">`. If Pages has a newer one, it downloads it into its data folder and offers a restart. Bump the `app-version` meta (and the version shown in the top bar) in the source for every release. A new DMG is only needed when `mac/app/main.js` changes.
+
 ## Changelog
+
+- **1.1.0**, 2 Oct 2026: undo/redo for drawn data and power paths (buttons plus ⌘Z / ⇧⌘Z). Added seam & alignment grid, gamma & greyscale ramps, and edge & overscan test patterns. Added heat output in BTU/h per screen and project. The Mac app now updates itself from GitHub Pages. The version is shown in the top bar.
 
 - **1.0.0**, 2 Oct 2026: first release. Covers multi-screen projects, saved projects, panel library, main/backup processors with custom data paths, custom power paths, printable plans, test cards (static, moving and wiring-plan cards), output canvases, MP4 export and the Mac app.
