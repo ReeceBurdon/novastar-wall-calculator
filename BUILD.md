@@ -9,7 +9,7 @@
 | PWA folder | Wrap in a proper `<head>` with manifest + service worker; swap the CDN muxer for local `mp4-muxer.js` |
 | Mac DMG (arm64) | Wrap like the PWA but with local fonts (Fontsource woff2) and a CSP; Electron shell below |
 
-Current version: **1.1.0** (2 Oct 2026).
+Current version: **1.2.0** (2 Oct 2026).
 
 ## Mac build pipeline (runs on Linux, no Mac needed)
 
@@ -76,6 +76,8 @@ app.on('window-all-closed',()=>{if(process.platform!=='darwin')app.quit()});
 From 1.1.0 the Mac app updates itself. `tools/build_mac.py` writes `docs/app/` (page, fonts, MP4 muxer, `version.txt`). On launch, and via *Check for Updates…* in the app menu, the app compares `version.txt` with its own `<meta name="app-version">`. If Pages has a newer one, it downloads it into its data folder and offers a restart. Bump the `app-version` meta (and the version shown in the top bar) in the source for every release. A new DMG is only needed when `mac/app/main.js` changes.
 
 ## Changelog
+
+- **1.2.0**, 2 Oct 2026: processors are now shared across the project. Each screen ticks the processors it runs from, and ports are allocated across all screens: hand-picked ports are reserved first, then screens fill free ports in screen-list order, with backups mirrored. The processor table shows ports and pixel load across all screens and who shares each unit. Added a port map on the Data tab and a project port map page in the printout. Older projects are migrated automatically (each screen's processors become project processors).
 
 - **1.1.0**, 2 Oct 2026: undo/redo for drawn data and power paths (buttons plus ⌘Z / ⇧⌘Z). Added seam & alignment grid, gamma & greyscale ramps, and edge & overscan test patterns. Added heat output in BTU/h per screen and project. The Mac app now updates itself from GitHub Pages. The version is shown in the top bar.
 

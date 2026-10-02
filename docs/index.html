@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="1.1.0">
+<meta name="app-version" content="1.2.0">
 <title>NovaStar Wall Calculator</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
@@ -80,7 +80,10 @@ input.locked:focus-visible{outline:none}
 .sub-head{grid-column:1/-1;font:600 11px var(--f-body);text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-top:4px;border-top:1px solid var(--line);padding-top:10px}
 
 .procs{grid-column:1/-1;display:flex;flex-direction:column;gap:6px}
-.proc-row{display:grid;grid-template-columns:56px minmax(0,1fr) 92px 30px;gap:6px;align-items:center}
+.proc-row{display:grid;grid-template-columns:20px 56px minmax(0,1fr) 84px 30px;gap:6px;align-items:center}
+.proc-row input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent);margin:0}
+.proc-row.off>*:not(input[type=checkbox]){opacity:.5}
+.proc-shared{grid-column:1/-1;font-size:11px;color:var(--muted);margin:-2px 0 2px 26px}
 .proc-row input,.proc-row select{padding:5px 6px;font-size:13px}
 .proc-row .x{padding:0;height:30px;justify-content:center}
 .proc-row.backup select[data-f=role]{color:var(--power)}
@@ -210,7 +213,7 @@ body.standalone .standalone-only{display:inline-flex!important}
 
 <div class="topbar">
   <h1>NovaStar Wall Calculator</h1>
-  <span class="sub">Data &amp; power routing · line loading · test cards · v1.1.0</span>
+  <span class="sub">Data &amp; power routing · line loading · test cards · v1.2.0</span>
   <span class="spacer"></span>
   <label class="proj-pick" aria-label="Project"><select id="projSel"></select></label>
   <button class="btn primary" id="btnNewProj" type="button">New project</button>
@@ -336,8 +339,10 @@ body.standalone .standalone-only{display:inline-flex!important}
       </div>
       <div class="plan-wrap" id="dataPlan"></div>
       <div class="table-wrap"><table id="dataTable"></table></div>
-      <div class="section-head"><h3>Processors</h3></div>
+      <div class="section-head"><h3>Processors</h3><span class="meta">Shared across the project. Load includes every screen on each processor.</span></div>
       <div class="table-wrap"><table id="procTable"></table></div>
+      <div class="section-head"><h3>Port map</h3><span class="meta">Every port in use on this screen's processors; other screens are dimmed</span></div>
+      <div class="table-wrap"><table id="portMap"></table></div>
     </section>
 
     <section class="panel" id="tab-power">
@@ -570,35 +575,50 @@ function route(cols,rows,dir,start,pattern,per,whole){
 }
 
 /* ---------- project model ---------- */
-const PFIELDS=['jobShow','jobEng','jobDate'];
+const PFIELDS=['jobShow','jobEng','jobDate','procPorts','procCap'];
 const SFIELDS=['jobScreen','panelPreset','pName','pPxW','pPxH','pMmW','pMmH','pMaxW','pTypW','pKg','wCols','wRows',
-  'procPorts','procCap','portBase','bitDepth','fps','dataOverride','dDir','dStart','dPattern','dWhole','bMode',
+  'portBase','bitDepth','fps','dataOverride','dDir','dStart','dPattern','dWhole','bMode',
   'volt','breaker','headroom','pBasis','supply','pwrOverride','pDir','pStart','pPattern','pWhole',
   'cardMode','cardLabels','cardColour','logoSize','cardMotion','recFps','recDur','outX','outY'];
 function newScreen(name){return{id:'sc'+uid(),cx:null,cy:null,jobScreen:name,panelPreset:'p26',pName:'Generic P2.6 500×500',pPxW:'192',pPxH:'192',pMmW:'500',pMmH:'500',pMaxW:'160',pTypW:'55',pKg:'7.5',
-  wCols:'12',wRows:'6',procPorts:'4',procCap:'2600000',portBase:'650000',bitDepth:'8',fps:'60',dataOverride:'',dDir:'v',dStart:'BL',dPattern:'snake',dWhole:true,bMode:'none',
+  wCols:'12',wRows:'6',portBase:'650000',bitDepth:'8',fps:'60',dataOverride:'',dDir:'v',dStart:'BL',dPattern:'snake',dWhole:true,bMode:'none',
   volt:'230',breaker:'16',headroom:'20',pBasis:'max',supply:'3',pwrOverride:'',pDir:'v',pStart:'BL',pPattern:'snake',pWhole:true,
   cardMode:'grid',cardLabels:true,cardColour:'#ff0000',logoSize:'14',cardMotion:'off',recFps:'50',recDur:'10',outX:'0',outY:'0',
-  procs:[{id:'pr'+uid(),name:'',model:'mctrl4k',role:'main'}],custom:{d:[],b:[],p:[]},dView:'main'}}
+  procIds:[],custom:{d:[],b:[],p:[]},dView:'main'}}
 function migrate(o){
-  if(o&&Array.isArray(o.screens)&&o.screens.length){o.screens.forEach(s=>{s.custom=s.custom||{d:[],b:[],p:[]};s.procs=s.procs&&s.procs.length?s.procs:[{id:'pr'+uid(),name:'',model:'mctrl4k',role:'main'}];if(s.cardMotion==='clock')s.cardMotion='counter'});
-    o.active=Math.min(o.active||0,o.screens.length-1);return o}
+  if(o&&Array.isArray(o.screens)&&o.screens.length){o.screens.forEach(s=>{s.custom=s.custom||{d:[],b:[],p:[]};if(s.cardMotion==='clock')s.cardMotion='counter'});
+    o.active=Math.min(o.active||0,o.screens.length-1);return fixProcs(o)}
   const s=newScreen((o&&o.jobScreen)||'Screen 1');if(o)SFIELDS.forEach(f=>{if(o[f]!==undefined)s[f]=o[f]});
   if(s.cardMotion==='clock')s.cardMotion='counter';
   if(o&&o.procModel)s.procs=[{id:'pr'+uid(),name:'',model:o.procModel,role:'main'}];
+  if(o&&o.procPorts){s.procPorts=o.procPorts;s.procCap=o.procCap}
   if(o&&o.dBackup)s.bMode='same';
   if(o)s.custom={d:o.customData||[],b:[],p:o.customPower||[]};
-  return{jobShow:(o&&o.jobShow)||'Example Tour 2026',jobEng:(o&&o.jobEng)||'',jobDate:(o&&o.jobDate)||today(),active:0,screens:[s]};
+  return fixProcs({jobShow:(o&&o.jobShow)||'Example Tour 2026',jobEng:(o&&o.jobEng)||'',jobDate:(o&&o.jobDate)||today(),active:0,screens:[s]});
 }
+/* processors belong to the project; each screen lists the ones it uses (procIds). Older projects kept them per screen. */
+function fixProcs(o){
+  if(!Array.isArray(o.procs)){o.procs=[];const a=o.screens[o.active||0]||o.screens[0]||{};
+    o.procPorts=o.procPorts||a.procPorts||'4';o.procCap=o.procCap||a.procCap||'2600000'}
+  o.screens.forEach(sc=>{if(Array.isArray(sc.procs)){sc.procs.forEach(p=>{if(!o.procs.some(x=>x.id===p.id))o.procs.push({id:p.id,name:p.name||'',model:p.model||'mctrl4k',role:p.role==='backup'?'backup':'main'})});
+      sc.procIds=sc.procs.map(p=>p.id);delete sc.procs}delete sc.procPorts;delete sc.procCap});
+  if(!o.procs.length)o.procs.push({id:'pr'+uid(),name:'',model:'mctrl4k',role:'main'});
+  o.procPorts=o.procPorts||'4';o.procCap=o.procCap||'2600000';
+  o.screens.forEach(sc=>{if(!Array.isArray(sc.procIds))sc.procIds=[];sc.procIds=sc.procIds.filter(id=>o.procs.some(p=>p.id===id));
+    if(!sc.procIds.length)sc.procIds=o.procs.filter(p=>p.role!=='backup').slice(0,1).map(p=>p.id)});
+  return o}
+const newAlloc=P=>({P,used:new Map,reserved:new Map});
+function procCode(P,p){if(p.name)return p.name;const same=P.procs.filter(x=>(x.role==='backup')===(p.role==='backup'));return (p.role==='backup'?'B':'M')+(same.findIndex(x=>x.id===p.id)+1)}
 let project=null,cur=null;
 const ACTIVE={d:0,b:0,p:0};
 
-function procSpec(s,p){const m=PROCS.find(x=>x.id===p.model)||PROCS.at(-1);
-  return m.id==='custom'?{ports:Math.max(1,parseInt(s.procPorts)||4),cap:parseFloat(s.procCap)||2600000,modelName:'Custom'}:{ports:m.ports,cap:m.cap,modelName:m.name}}
+function procSpec(P,p){const m=PROCS.find(x=>x.id===p.model)||PROCS.at(-1);
+  return m.id==='custom'?{ports:Math.max(1,parseInt(P.procPorts)||4),cap:parseFloat(P.procCap)||2600000,modelName:'Custom'}:{ports:m.ports,cap:m.cap,modelName:m.name}}
 function normLines(arr){return(arr||[]).map(l=>Array.isArray(l)?{cells:l,proc:null,port:null}:{cells:l.cells||[],proc:l.proc||null,port:l.port||null})}
 
 /* ---------- calculation for one screen (pure apart from tidying its custom paths) ---------- */
-function computeScreen(s){
+function computeScreen(s,alloc){
+  alloc=alloc||newAlloc(project||{procs:[],screens:[]});const P=alloc.P,owner=s.jobScreen||'Screen';
   syncSpec(s);
   const N=(k,d=0)=>{const v=parseFloat(s[k]);return isFinite(v)?v:d},B=k=>s[k]===true||s[k]==='true';
   const pxW=Math.max(1,N('pPxW',1)),pxH=Math.max(1,N('pPxH',1)),mmW=N('pMmW',500)||500,mmH=N('pMmH',500)||500;
@@ -612,37 +632,42 @@ function computeScreen(s){
   // processors
   const base=N('portBase',650000),depth=+s.bitDepth||8,fps=Math.max(1,N('fps',60));
   const depthF=depth>8?0.5:1,fpsF=fps>60?60/fps:1,portCap=Math.floor(base*depthF*fpsF);
-  const procs=(s.procs||[]).map(p=>({...p,...procSpec(s,p)}));
+  const procs=(s.procIds||[]).map(id=>(P.procs||[]).find(x=>x.id===id)).filter(Boolean).map(p=>({...p,...procSpec(P,p),code:procCode(P,p)}));
   const mains=procs.filter(p=>p.role!=='backup'),backs=procs.filter(p=>p.role==='backup');
-  mains.forEach((p,i)=>p.code=p.name||('M'+(i+1)));backs.forEach((p,i)=>p.code=p.name||('B'+(i+1)));
-  const multi=procs.length>1,bMode=s.bMode||'none';
+  const multi=(P.procs||[]).length>1,bMode=s.bMode||'none';
   const lbl=(p,port)=>(multi?p.code+'·':'')+'P'+port;
   let dPer=Math.floor(portCap/panelPx);const dOv=parseInt(s.dataOverride);if(dOv>0)dPer=Math.min(dPer,dOv);
   const mainAvail=p=>bMode==='same'?Math.max(1,Math.floor(p.ports/2)):p.ports;
 
-  function assign(raw,pool,avail){
-    const used=new Set(),out=raw.map(()=>null),key=(p,q)=>p.id+':'+q;
-    raw.forEach((l,i)=>{if(!l.proc||!l.port)return;const p=pool.find(x=>x.id===l.proc);if(p&&l.port<=avail(p)&&!used.has(key(p,l.port))){used.add(key(p,l.port));out[i]={p,port:l.port}}});
+  // ports are shared project-wide: alloc.used holds every port already taken (by any screen); alloc.reserved holds hand-picked ports
+  function assign(raw,pool,avail,kind){
+    const out=raw.map(()=>null),key=(p,q)=>p.id+':'+q,clash=[];
+    const mine=(k,i)=>{const r=alloc.reserved.get(k);return !r||(r.sid===s.id&&r.kind===kind&&r.i===i)};
+    const free=k=>!alloc.used.has(k)&&!alloc.reserved.has(k);
+    raw.forEach((l,i)=>{if(!l.port||!pool.length)return;const p=l.proc?pool.find(x=>x.id===l.proc):pool[0];if(!p||l.port>avail(p))return;const k=key(p,l.port);
+      if(mine(k,i)&&!alloc.used.has(k)){alloc.used.set(k,owner);out[i]={p,port:l.port}}
+      else clash[i]=alloc.used.get(k)||((P.screens||[]).find(x=>x.id===(alloc.reserved.get(k)||{}).sid)||{}).jobScreen||'another line'});
     raw.forEach((l,i)=>{if(out[i])return;const pref=l.proc?pool.filter(x=>x.id===l.proc):[];
-      for(const p of [...pref,...pool]){let hit=null;for(let q=1;q<=avail(p);q++)if(!used.has(key(p,q))){hit=q;break}
-        if(hit){used.add(key(p,hit));out[i]={p,port:hit};break}}});
-    return out;
+      for(const p of [...pref,...pool]){let hit=null;for(let q=1;q<=avail(p);q++)if(free(key(p,q))){hit=q;break}
+        if(hit){alloc.used.set(key(p,hit),owner);out[i]={p,port:hit};break}}});
+    out.clash=clash;return out;
   }
+  const claim=(p,port)=>{const k=p.id+':'+port;if(alloc.used.has(k)&&alloc.used.get(k)!==owner)return alloc.used.get(k);if(alloc.used.has(k))return owner;alloc.used.set(k,owner);return null};
   function build(raw,slots,colour,isBackup){return raw.map((l,i)=>{const a=slots[i];
-    return{cells:l.cells,proc:a?a.p:null,port:a?a.port:null,label:a?lbl(a.p,a.port):'U'+(i+1),px:l.cells.length*panelPx,pct:l.cells.length*panelPx/portCap,
+    return{clash:slots.clash[i]||null,cells:l.cells,proc:a?a.p:null,port:a?a.port:null,label:a?lbl(a.p,a.port):'U'+(i+1),px:l.cells.length*panelPx,pct:l.cells.length*panelPx/portCap,
       color:colour(i),over:(dOv>0&&l.cells.length>dOv)||l.cells.length*panelPx>portCap,setProc:l.proc,setPort:l.port,backup:!!isBackup}})}
 
   const mainRaw=s.dPattern==='custom'?s.custom.d.map(l=>({cells:toCells(l.cells),proc:l.proc,port:l.port}))
     :route(cols,rows,s.dDir,s.dStart,s.dPattern,dPer,B('dWhole')).map(cells=>({cells,proc:null,port:null}));
-  const dataLines=build(mainRaw,assign(mainRaw,mains,mainAvail),hue,false);
+  const dataLines=build(mainRaw,assign(mainRaw,mains,mainAvail,'d'),hue,false);
 
   let backupLines=[];
   if(bMode==='same'){backupLines=dataLines.map(l=>{const h=l.proc?Math.floor(l.proc.ports/2):0,port=l.proc?l.port+h:null;
-    return{...l,cells:[...l.cells].reverse(),port,label:l.proc?lbl(l.proc,port):'—',feeds:l.label,backup:true}})}
+    return{...l,cells:[...l.cells].reverse(),port,label:l.proc?lbl(l.proc,port):'—',feeds:l.label,backup:true,clash:l.proc?claim(l.proc,port):null}})}
   else if(bMode==='proc'){backupLines=dataLines.map(l=>{const k=l.proc?mains.indexOf(l.proc):-1,bp=k>=0?backs[k]:null,ok=!!(bp&&l.port<=bp.ports);
-    return{...l,cells:[...l.cells].reverse(),proc:ok?bp:null,port:ok?l.port:null,label:ok?lbl(bp,l.port):'—',feeds:l.label,backup:true}})}
+    return{...l,cells:[...l.cells].reverse(),proc:ok?bp:null,port:ok?l.port:null,label:ok?lbl(bp,l.port):'—',feeds:l.label,backup:true,clash:ok?claim(bp,l.port):null}})}
   else if(bMode==='custom'){const raw=s.custom.b.map(l=>({cells:toCells(l.cells),proc:l.proc,port:l.port}));
-    backupLines=build(raw,assign(raw,backs,p=>p.ports),i=>(hue(i)+25)%360,true).map(l=>{l.label=l.proc?l.label:'UB'+l.label.slice(1);return l})}
+    backupLines=build(raw,assign(raw,backs,p=>p.ports,'b'),i=>(hue(i)+25)%360,true).map(l=>{l.label=l.proc?l.label:'UB'+l.label.slice(1);return l})}
 
   const procSum=procs.map(p=>{const on=[...dataLines,...backupLines].filter(l=>l.proc===p);
     const carry=on.filter(l=>l.backup===(p.role==='backup')),px=carry.reduce((a,l)=>a+l.px,0),cap=p.cap*depthF*fpsF;
@@ -664,10 +689,26 @@ function computeScreen(s){
 
   const map=lines=>{const m={};lines.forEach((l,i)=>l.cells.forEach((c,j)=>m[c.c+'_'+c.r]={i,j,l}));return m};
   const dMap=map(dataLines),bMap=map(backupLines),pMap=map(powerLines);
-  return{s,pxW,pxH,mmW,mmH,maxW,typW,kg,cols,rows,n,panelPx,W,H,portCap,dPer,depth,fps,procs,mains,backs,bMode,dataLines,backupLines,procSum,unMain,unBack,mainPorts,mainAvail,
+  return{s,depthF,fpsF,pxW,pxH,mmW,mmH,maxW,typW,kg,cols,rows,n,panelPx,W,H,portCap,dPer,depth,fps,procs,mains,backs,bMode,dataLines,backupLines,procSum,unMain,unBack,mainPorts,mainAvail,
     V,A,head,basis,bw,usable,pPer,powerLines,phases,phaseA,phaseTypA,worstPhase,supplyRating,dMap,bMap,pMap,
     dUn:n-Object.keys(dMap).length,bUn:n-Object.keys(bMap).length,pUn:n-Object.keys(pMap).length};
 }
+
+/* whole project: hand-picked ports are reserved first, then screens fill free ports in list order; processor load is totalled across screens */
+function computeProject(P){const alloc=newAlloc(P);
+  P.screens.forEach(sc=>{[['d',sc.dPattern==='custom'],['b',sc.bMode==='custom']].forEach(([k,on])=>{if(!on||!sc.custom)return;
+    const first=(P.procs||[]).find(p=>(sc.procIds||[]).includes(p.id)&&(p.role==='backup')===(k==='b'));
+    (sc.custom[k]||[]).forEach((l,i)=>{const pid=l&&(l.proc||(first&&first.id));if(l&&!Array.isArray(l)&&pid&&l.port){const key=pid+':'+l.port;if(!alloc.reserved.has(key))alloc.reserved.set(key,{sid:sc.id,kind:k,i})}})})});
+  const RS=P.screens.map(sc=>computeScreen(sc,alloc)),G={};
+  (P.procs||[]).forEach(p=>G[p.id]={used:0,px:0,screens:[],ports:[]});
+  RS.forEach(r=>[...r.dataLines,...r.backupLines].forEach(l=>{if(!l.proc||!G[l.proc.id])return;const g=G[l.proc.id],name=r.s.jobScreen||'Screen';
+    g.used++;g.ports.push({port:l.port,screen:name,sid:r.s.id,label:l.label,panels:l.cells.length,pct:l.pct,backup:l.backup});if(!g.screens.includes(name))g.screens.push(name);
+    if(l.backup===(l.proc.role==='backup'))g.px+=l.px}));
+  RS.forEach(r=>{const me=r.s.jobScreen||'Screen';r.G=G;
+    r.procSum=r.procs.map(p=>{const g=G[p.id]||{used:0,px:0,screens:[],ports:[]},cap=p.cap*r.depthF*r.fpsF,here=g.ports.filter(x=>x.sid===r.s.id).length;
+      return{p,ports:p.ports,used:here,usedAll:g.used,px:g.px,cap,pct:g.px/cap,shared:g.screens.filter(n=>n!==me),portList:g.ports}});
+    r.mainOthers=r.mains.reduce((a,p)=>a+((G[p.id]||{ports:[]}).ports.filter(x=>x.sid!==r.s.id&&!x.backup).length),0)});
+  return RS}
 
 /* ---------- DOM <-> screen ---------- */
 function readFields(){PFIELDS.forEach(f=>project[f]=$(f).value);SFIELDS.forEach(f=>{const e=$(f);cur[f]=e.type==='checkbox'?e.checked:e.value})}
@@ -691,20 +732,29 @@ function applyPanel(id){const p=allPanels().find(x=>x.id===id);if(!p)return;
   $('pMaxW').value=p.maxW;$('pTypW').value=p.typW;$('pKg').value=p.kg;$('pwrOverride').value=p.powerLink||'';$('dataOverride').value=p.dataLink||''}
 
 function renderProcList(){
-  const mains=cur.procs.filter(p=>p.role!=='backup'),one=cur.procs.length<=1;
-  $('procList').innerHTML=cur.procs.map(p=>{const code=p.role==='backup'?'B'+(cur.procs.filter(x=>x.role==='backup').indexOf(p)+1):'M'+(mains.indexOf(p)+1);
-    return `<div class="proc-row ${p.role==='backup'?'backup':''}" data-id="${p.id}">
+  const one=project.procs.length<=1;
+  $('procList').innerHTML='<div class="hint" style="margin:0 0 2px">Processors are shared by the whole project. Tick the ones this screen runs from.</div>'+project.procs.map(p=>{const code=procCode({procs:project.procs},{...p,name:''}),on=cur.procIds.includes(p.id);
+    const others=project.screens.filter(sc=>sc!==cur&&(sc.procIds||[]).includes(p.id)).map(sc=>sc.jobScreen||'Screen');
+    return `<div class="proc-row ${p.role==='backup'?'backup':''} ${on?'':'off'}" data-id="${p.id}">
+      <input id="proc_${p.id}_use" data-f="use" type="checkbox" ${on?'checked':''} aria-label="Used by this screen">
       <input id="proc_${p.id}_name" data-f="name" type="text" value="${esc(p.name)}" placeholder="${code}" aria-label="Processor name" maxlength="8">
       <select id="proc_${p.id}_model" data-f="model" aria-label="Processor model">${PROCS.map(m=>`<option value="${m.id}" ${m.id===p.model?'selected':''}>${m.name}</option>`).join('')}</select>
       <select id="proc_${p.id}_role" data-f="role" aria-label="Role"><option value="main" ${p.role!=='backup'?'selected':''}>Main</option><option value="backup" ${p.role==='backup'?'selected':''}>Backup</option></select>
-      <button class="btn sm x danger" type="button" data-del="1" ${one?'disabled':''} aria-label="Remove processor">✕</button></div>`}).join('');
+      <button class="btn sm x danger" type="button" data-del="1" ${one?'disabled':''} aria-label="Remove processor from project" title="Remove from project">✕</button></div>
+      ${others.length?`<div class="proc-shared">Also used by ${esc(others.join(', '))}</div>`:''}`}).join('');
 }
 $('procList').addEventListener('input',e=>{const row=e.target.closest('[data-id]');if(!row)return;e.stopPropagation();
-  const p=cur.procs.find(x=>x.id===row.dataset.id);if(!p)return;p[e.target.dataset.f]=e.target.value.trim();
-  if(e.target.dataset.f==='role')renderProcList();kick()});
+  const p=project.procs.find(x=>x.id===row.dataset.id);if(!p)return;
+  if(e.target.dataset.f==='use'){cur.procIds=cur.procIds.filter(id=>id!==p.id);if(e.target.checked)cur.procIds.push(p.id);
+    cur.procIds=project.procs.map(x=>x.id).filter(id=>cur.procIds.includes(id));renderProcList();kick();return}
+  p[e.target.dataset.f]=e.target.value.trim();if(e.target.dataset.f==='role')renderProcList();kick()});
 $('procList').addEventListener('click',e=>{const b=e.target.closest('[data-del]');if(!b)return;const id=b.closest('[data-id]').dataset.id;
-  cur.procs=cur.procs.filter(x=>x.id!==id);['d','b'].forEach(k=>cur.custom[k].forEach(l=>{if(l.proc===id){l.proc=null;l.port=null}}));renderProcList();kick()});
-function addProc(role){const last=cur.procs.filter(p=>p.role===role).at(-1)||cur.procs.at(-1);cur.procs.push({id:'pr'+uid(),name:'',model:last?last.model:'mctrl4k',role});renderProcList();kick()}
+  const used=project.screens.filter(sc=>sc!==cur&&(sc.procIds||[]).includes(id)).length;
+  if(used&&!b.classList.contains('armed')){b.classList.add('armed');b.textContent='?';b.title=`Used by ${used} other screen${used>1?'s':''}. Click again to remove it from the whole project.`;setTimeout(()=>{if(b.isConnected){b.classList.remove('armed');b.textContent='✕'}},3000);return}
+  project.procs=project.procs.filter(x=>x.id!==id);project.screens.forEach(sc=>{sc.procIds=(sc.procIds||[]).filter(x=>x!==id);['d','b'].forEach(k=>((sc.custom||{})[k]||[]).forEach(l=>{if(l&&l.proc===id){l.proc=null;l.port=null}}))});
+  renderProcList();kick()});
+function newProc(role){const last=project.procs.filter(p=>p.role===role).at(-1)||project.procs.at(-1);const p={id:'pr'+uid(),name:'',model:last?last.model:'mctrl4k',role};project.procs.push(p);cur.procIds.push(p.id);return p}
+function addProc(role){newProc(role);renderProcList();kick()}
 $('addMain').addEventListener('click',()=>addProc('main'));
 $('addBackup').addEventListener('click',()=>{addProc('backup');if($('bMode').value==='none'||$('bMode').value==='same'){$('bMode').value='proc';kick()}});
 
@@ -747,7 +797,8 @@ function toolAction(k,act){if(act==='hundo'){histStep(-1);return}if(act==='hredo
 
 /* ---------- compute + render ---------- */
 let R=null;
-function compute(){readFields();R=computeScreen(cur);['d','b','p'].forEach(k=>ACTIVE[k]=Math.min(ACTIVE[k],Math.max(0,cur.custom[k].length-1)));render();save()}
+let RS=[],RSById={};
+function compute(){readFields();RS=computeProject(project);RSById={};RS.forEach(r=>RSById[r.s.id]=r);R=RSById[cur.id];['d','b','p'].forEach(k=>ACTIVE[k]=Math.min(ACTIVE[k],Math.max(0,cur.custom[k].length-1)));render();save()}
 
 function render(){
   const r=R,g=gcd(r.W,r.H)||1,wm=r.cols*r.mmW/1000,hm=r.rows*r.mmH/1000;
@@ -768,6 +819,7 @@ function render(){
     al.push(['bad',`${r.unMain} main line${r.unMain>1?'s have':' has'} no processor port. Add ${need} more main processor${need>1?'s':''}.`,`<button class="btn sm" type="button" data-fix="addMain" data-n="${need}">Add ${need}</button>`])}
   if((r.bMode==='proc'||r.bMode==='custom')&&!r.backs.length)al.push(['bad','Backup routing needs a processor set to Backup.',`<button class="btn sm" type="button" data-fix="addBackup">Add backup processor</button>`]);
   else if(r.bMode==='proc'){const miss=r.backupLines.filter(l=>!l.proc).length;if(miss)al.push(['bad',`${miss} backup line${miss>1?'s have':' has'} no matching backup processor port. Each main processor needs a backup processor with at least as many ports.`])}
+  [...r.dataLines,...r.backupLines].filter(l=>l.clash).forEach(l=>al.push(['warn',l.setProc?`${l.label}: the port you picked is already used by ${l.clash}, so it moved to the next free port.`:`${l.label}: port already used by ${l.clash}. Give this screen its own backup ports or processor.`]));
   if(r.unBack)al.push(['bad',`${r.unBack} backup line${r.unBack>1?'s have':' has'} no backup processor port.`]);
   r.procSum.forEach(ps=>{if(ps.pct>1)al.push(['bad',`${ps.p.code} carries ${fmt(ps.px)} px, over its ${fmt(ps.cap)} px capacity.`])});
   const dOver=r.dataLines.filter(l=>l.over),bOver=r.bMode==='custom'?r.backupLines.filter(l=>l.over):[],pOver=r.powerLines.filter(l=>l.over);
@@ -792,6 +844,7 @@ function render(){
   $('dataPlan').classList.toggle('drawing',dC);
   $('dataTable').innerHTML=back?backupTableHTML(r,dC):dataTableHTML(r,dC);
   $('procTable').innerHTML=procTableHTML(r);
+  $('portMap').innerHTML=portMapHTML(r,r.procs);
   $('dSeed').textContent=back?'Restart from main (looped)':'Restart from auto';
   toolbar(dk,dC,'dTools','dActive','dStatus',back?r.backupLines:r.dataLines);
 
@@ -812,7 +865,7 @@ function render(){
 function statsHTML(r){const g=gcd(r.W,r.H)||1,wm=r.cols*r.mmW/1000,hm=r.rows*r.mmH/1000,used=r.dataLines.filter(l=>l.proc).length;
   return [['Resolution',`${fmt(r.W)}×${fmt(r.H)}`,`${r.W/g}:${r.H/g} · ${fmt(r.W*r.H)} px`,''],
     ['Wall',`${wm.toFixed(1)} × ${hm.toFixed(1)} m`,`${r.cols}×${r.rows} = ${r.n} panels`,''],
-    ['Main ports',`${used} / ${r.mainPorts}`,`${r.mains.length} main · ${r.backs.length} backup proc.`,'data'],
+    ['Main ports',`${used} used`,`of ${r.mainPorts} on ${r.mains.length} main${r.mainOthers?` · ${r.mainOthers} used by other screens`:` · ${r.backs.length} backup`}`,'data'],
     ['Power circuits',`${r.powerLines.length} × ${r.A}A`,`${r.phases===3?'Three':'Single'}-phase`,'pwr'],
     ['Max load',`${fmt(r.n*r.maxW/1000,1)} kW`,`Typ ${fmt(r.n*r.typW/1000,1)} kW`,'pwr'],
     ['Heat output',`${fmt(r.n*r.maxW*3.412)} BTU/h`,`Typ ${fmt(r.n*r.typW*3.412)} BTU/h`,''],
@@ -835,9 +888,14 @@ function backupTableHTML(r,edit,print){
     r.backupLines.map((l,i)=>`<tr class="${edit?'pick':''} ${edit&&i===ACTIVE.b&&!print?'active-line':''}" data-line="${i}"><td><span class="swatch" style="background:hsl(${l.color},70%,50%)"></span><b>${esc(l.label)}</b></td>
       ${r.bMode==='custom'?'':`<td>${esc(l.feeds)}</td>`}${procCell(r,l,i,edit&&!print,r.backs,p=>p.ports,'b')}<td class="num">${l.cells.length}${l.over?' ⚠':''}</td><td>${runText(l.cells)}</td><td class="num">${fmt(l.px)}</td><td>${meter(l.pct)}</td></tr>`).join('')+'</tbody>'}
 function procTableHTML(r){
-  return `<thead><tr><th>Processor</th><th>Model</th><th>Role</th><th>Ports used</th><th>Pixel load</th></tr></thead><tbody>`+
+  return `<thead><tr><th>Processor</th><th>Model</th><th>Role</th><th>Ports (this screen)</th><th>Ports (all screens)</th><th>Pixel load (all screens)</th><th>Shared with</th></tr></thead><tbody>`+
     r.procSum.map(ps=>`<tr><td><b>${esc(ps.p.code)}</b></td><td>${esc(ps.p.modelName)}</td><td><span class="pill ${ps.p.role==='backup'?'bk':''}">${ps.p.role==='backup'?'Backup':'Main'}</span></td>
-      <td class="num">${ps.used} / ${ps.ports}</td><td>${meter(ps.pct)}</td></tr>`).join('')+'</tbody>'}
+      <td class="num">${ps.used}</td><td class="num">${ps.usedAll} / ${ps.ports}</td><td>${meter(ps.pct)}</td><td>${ps.shared.length?esc(ps.shared.join(', ')):'<span style="color:var(--muted)">—</span>'}</td></tr>`).join('')+'</tbody>'}
+function portMapHTML(r,procList,all){
+  const rows=[];procList.forEach(p=>{const g=(r.G||{})[p.id];if(!g)return;[...g.ports].sort((a,b)=>a.port-b.port).forEach(x=>rows.push({p,...x}))});
+  if(!rows.length)return '<tbody><tr><td style="color:var(--muted)">No ports in use yet.</td></tr></tbody>';
+  return `<thead><tr><th>Processor</th><th>Port</th><th>Screen</th><th>Line</th><th>Panels</th><th>Port load</th></tr></thead><tbody>`+
+    rows.map(x=>`<tr ${all||x.sid===r.s.id?'':'style="opacity:.6"'}><td><b>${esc(x.p.code)}</b></td><td class="num">${x.port}${x.backup?' <span class="pill bk">BK</span>':''}</td><td>${esc(x.screen)}</td><td>${esc(x.label)}</td><td class="num">${x.panels}</td><td>${meter(x.pct)}</td></tr>`).join('')+'</tbody>'}
 function powerTableHTML(r,edit,print){
   return `<thead><tr><th>Circuit</th><th>Phase</th><th>Panels</th><th>Run</th><th>Max W</th><th>Max A</th><th>Typ A</th><th>Breaker load (${r.basis==='max'?'max':'typ'})</th></tr></thead><tbody>`+
     r.powerLines.map((l,i)=>`<tr class="${edit?'pick':''} ${edit&&i===ACTIVE.p&&!print?'active-line':''}" data-line="${i}"><td><span class="swatch" style="background:hsl(${l.color},75%,48%)"></span><b>${l.label}</b></td><td><span class="pill">${l.phase}</span></td>
@@ -897,8 +955,8 @@ $('powerTable').addEventListener('click',e=>{if(!isCustom('p'))return;const tr=e
 function setRouting(which,custom){snap();
   if(which==='p'){$('pPattern').value=custom?'custom':'snake';if(custom&&!cur.custom.p.some(l=>l.cells.length))seedCustom('p')}
   else if(dataKey()==='d'){$('dPattern').value=custom?'custom':'snake';if(custom&&!cur.custom.d.some(l=>l.cells.length))seedCustom('d')}
-  else{const hasB=cur.procs.some(p=>p.role==='backup');
-    if(custom){if(!hasB)cur.procs.push({id:'pr'+uid(),name:'',model:(cur.procs[0]||{model:'mctrl4k'}).model,role:'backup'});$('bMode').value='custom';renderProcList();if(!cur.custom.b.some(l=>l.cells.length))seedCustom('b')}
+  else{const hasB=project.procs.some(p=>p.role==='backup'&&cur.procIds.includes(p.id));
+    if(custom){if(!hasB){const pb=project.procs.find(p=>p.role==='backup');if(pb)cur.procIds.push(pb.id);else newProc('backup')}$('bMode').value='custom';renderProcList();if(!cur.custom.b.some(l=>l.cells.length))seedCustom('b')}
     else $('bMode').value=hasB?'proc':'same'}
   compute()}
 $('pAuto').addEventListener('click',()=>setRouting('p',false));$('pDraw').addEventListener('click',()=>setRouting('p',true));
@@ -906,22 +964,22 @@ $('dAuto').addEventListener('click',()=>setRouting('d',false));$('dDraw').addEve
 $('viewMain').addEventListener('click',()=>{cur.dView='main';compute()});
 $('viewBackup').addEventListener('click',()=>{cur.dView='backup';if(isCustom('b')&&!cur.custom.b.some(l=>l.cells.length))seedCustom('b');compute()});
 $('alerts').addEventListener('click',e=>{const b=e.target.closest('[data-fix]');if(!b)return;
-  if(b.dataset.fix==='addMain'){for(let i=0;i<(+b.dataset.n||1);i++)cur.procs.push({id:'pr'+uid(),name:'',model:(cur.procs.find(p=>p.role!=='backup')||{model:'mctrl4k'}).model,role:'main'});renderProcList();compute()}
+  if(b.dataset.fix==='addMain'){for(let i=0;i<(+b.dataset.n||1);i++)newProc('main');renderProcList();compute()}
   else addProc('backup')});
 
 /* ---------- screens ---------- */
 function renderScreens(){
-  const totals=project.screens.map((s,i)=>i===project.active?R:computeScreen(JSON.parse(JSON.stringify(s))));
+  const totals=project.screens.map(s=>RSById[s.id]||computeScreen(JSON.parse(JSON.stringify(s))));
   $('screens').innerHTML=project.screens.map((s,i)=>{const t=totals[i];return `<button type="button" class="scr" data-i="${i}" aria-current="${i===project.active}"><b>${esc(s.jobScreen||'Screen '+(i+1))}</b><span>${t.cols}×${t.rows} · ${fmt(t.W)}×${fmt(t.H)}</span></button>`}).join('')+
     `<div class="screen-actions"><button class="btn sm" type="button" id="scrAdd">Add screen</button><button class="btn sm" type="button" id="scrDup">Duplicate</button><button class="btn sm danger" type="button" id="scrDel" ${project.screens.length<2?'disabled':''}>Delete screen</button></div>`;
   const sum=(f)=>totals.reduce((a,t)=>a+f(t),0);
-  $('projTotal').textContent=project.screens.length>1?`Project: ${project.screens.length} screens · ${fmt(sum(t=>t.n))} panels · ${fmt(sum(t=>t.n*t.maxW)/1000,1)} kW max (${fmt(sum(t=>t.n*t.typW)/1000,1)} typ) · ${fmt(sum(t=>t.n*t.maxW)*3.412)} BTU/h max · ${sum(t=>t.mains.length)} main + ${sum(t=>t.backs.length)} backup processors · ${sum(t=>t.powerLines.length)} circuits · ${fmt(sum(t=>t.n*t.kg))} kg`:'';
+  $('projTotal').textContent=project.screens.length>1?`Project: ${project.screens.length} screens · ${fmt(sum(t=>t.n))} panels · ${fmt(sum(t=>t.n*t.maxW)/1000,1)} kW max (${fmt(sum(t=>t.n*t.typW)/1000,1)} typ) · ${fmt(sum(t=>t.n*t.maxW)*3.412)} BTU/h max · ${project.procs.filter(p=>p.role!=='backup').length} main + ${project.procs.filter(p=>p.role==='backup').length} backup processors · ${sum(t=>t.powerLines.length)} circuits · ${fmt(sum(t=>t.n*t.kg))} kg`:'';
 }
 function switchScreen(i){readFields();project.active=i;cur=project.screens[i];ACTIVE.d=ACTIVE.b=ACTIVE.p=0;writeFields();compute();if($('tab-card').classList.contains('active'))buildCard()}
 $('screens').addEventListener('click',e=>{
   const b=e.target.closest('.scr');if(b){switchScreen(+b.dataset.i);return}
-  if(e.target.id==='scrAdd'){readFields();const n=newScreen('Screen '+(project.screens.length+1)),C=curCanvas();n.canvas=C.id;project.screens.push(n);placeNew(C,n);switchScreen(project.screens.length-1)}
-  else if(e.target.id==='scrDup'){readFields();const c=JSON.parse(JSON.stringify(cur));c.jobScreen=(cur.jobScreen||'Screen')+' copy';c.id='sc'+uid();c.procs.forEach(p=>{const old=p.id;p.id='pr'+uid();['d','b'].forEach(k=>c.custom[k].forEach(l=>{if(l.proc===old)l.proc=p.id}))});
+  if(e.target.id==='scrAdd'){readFields();const n=newScreen('Screen '+(project.screens.length+1)),C=curCanvas();n.procIds=[...cur.procIds];n.canvas=C.id;project.screens.push(n);placeNew(C,n);switchScreen(project.screens.length-1)}
+  else if(e.target.id==='scrDup'){readFields();const c=JSON.parse(JSON.stringify(cur));c.jobScreen=(cur.jobScreen||'Screen')+' copy';c.id='sc'+uid();['d','b'].forEach(k=>(c.custom[k]||[]).forEach(l=>{if(l&&!Array.isArray(l)){l.proc=null;l.port=null}}));
     project.screens.splice(project.active+1,0,c);if(c.canvas){const C=project.canvases.find(x=>x.id===c.canvas);if(C)placeNew(C,c)}switchScreen(project.active+1)}
   else if(e.target.id==='scrDel'){const d=e.target;if(d.classList.contains('armed')){project.screens.splice(project.active,1);project.active=Math.max(0,project.active-1);cur=project.screens[project.active];writeFields();compute()}
     else{d.classList.add('armed');d.textContent='Confirm delete';setTimeout(()=>{if(d.isConnected){d.classList.remove('armed');d.textContent='Delete screen'}},3000)}}
@@ -930,7 +988,8 @@ $('screens').addEventListener('click',e=>{
 /* ---------- print all screens ---------- */
 function buildPrint(){
   readFields();
-  $('printAll').innerHTML=canvasPrintHTML()+project.screens.map((s,i)=>{const r=i===project.active?R:computeScreen(JSON.parse(JSON.stringify(s)));
+  compute();
+  $('printAll').innerHTML=canvasPrintHTML()+portMapPrintHTML()+project.screens.map((s,i)=>{const r=RSById[s.id];
     const procs=r.procSum.map(ps=>`${ps.p.code} ${ps.p.modelName}${ps.p.role==='backup'?' (backup)':''}`).join(', ');
     let h=`<section class="print-screen"><div class="print-head"><h1>${esc(project.jobShow||'LED wall')} — ${esc(s.jobScreen||'Screen '+(i+1))}</h1>
       <div class="row"><span>Date: ${esc(project.jobDate)}</span><span>Engineer: ${esc(project.jobEng||'—')}</span><span>Panel: ${esc(s.pName)}</span>
@@ -1090,7 +1149,7 @@ function setLogo(url){if(!url){logo=null;logoVer++;$('logoPrev').innerHTML='<spa
 /* one screen's static card, cached per screen */
 const cardCache=new Map();
 function screenCard(s,r){const k=JSON.stringify({...s,cx:0,cy:0,canvas:0,dView:0})+'|'+logoVer,c=cardCache.get(s.id);if(c&&c.k===k)return c;
-  const rr=r||computeScreen(JSON.parse(JSON.stringify(s))),out={k,r:rr,...renderScreenCard(rr,s)};cardCache.set(s.id,out);return out}
+  const rr=r||RSById[s.id]||computeScreen(JSON.parse(JSON.stringify(s))),out={k,r:rr,...renderScreenCard(rr,s)};cardCache.set(s.id,out);return out}
 
 /* motion overlay, drawn inside one region (a screen) of the output */
 function tc(ms,fps){const f=Math.floor(ms/1000*fps+1e-6),ff=f%fps,s=Math.floor(f/fps),p=n=>String(n).padStart(2,'0');return `${p(Math.floor(s/3600))}:${p(Math.floor(s/60)%60)}:${p(s%60)}:${p(ff)}`}
@@ -1303,6 +1362,10 @@ canvasP.cv.addEventListener('pointermove',e=>{const p=cvPoint(e);
     const xi=$('cvx_'+g.s.id),yi=$('cvy_'+g.s.id);if(xi)xi.value=g.s.cx;if(yi)yi.value=g.s.cy;renderCanvasUI(true)})});
 ['pointerup','pointercancel'].forEach(ev=>canvasP.cv.addEventListener(ev,()=>{if(drag){drag=null;save();renderCanvasUI()}}));
 
+function portMapPrintHTML(){const r=RS[0];if(!r||!project.procs.length)return '';
+  return `<section class="print-screen"><div class="print-head"><h1>${esc(project.jobShow||'LED project')} — Processor port map</h1></div><div class="table-wrap pblock"><table>${procTablePrint()}</table></div><div class="table-wrap"><table>${portMapHTML({...r,s:{id:'__all'}},project.procs.map(p=>({...p,...procSpec(project,p),code:procCode(project,p)})),true)}</table></div></section>`}
+function procTablePrint(){const r=RS[0];return `<thead><tr><th>Processor</th><th>Model</th><th>Role</th><th>Ports used</th><th>Screens</th></tr></thead><tbody>`+
+  project.procs.map(p=>{const sp=procSpec(project,p),g=(r.G||{})[p.id]||{used:0,screens:[]};return `<tr><td><b>${esc(procCode(project,p))}</b></td><td>${esc(sp.modelName)}</td><td>${p.role==='backup'?'Backup':'Main'}</td><td class="num">${g.used} / ${sp.ports}</td><td>${esc(g.screens.join(', ')||'—')}</td></tr>`}).join('')+'</tbody>'}
 function canvasPrintHTML(){
   return `<section class="print-screen"><div class="print-head"><h1>${esc(project.jobShow||'LED project')} — Output canvases</h1><div class="row"><span>Date: ${esc(project.jobDate)}</span><span>Engineer: ${esc(project.jobEng||'—')}</span></div></div>`+
     project.canvases.map(C=>{const gs=onCanvas(C).map((s,i)=>({s,i,...sizeOf(s),x:+s.cx||0,y:+s.cy||0})),fs=Math.max(C.w,C.h)/60;
