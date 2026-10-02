@@ -1,6 +1,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="app-version" content="1.2.0">
+<meta name="app-version" content="1.2.1">
 <title>NovaStar Wall Calculator</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
@@ -195,13 +195,22 @@ body.standalone .standalone-only{display:inline-flex!important}
   .pblock h2{font-size:18px;margin-bottom:6px}
   .ppage{break-before:page}
   .plan-wrap,.table-wrap,.phase{border-color:#999}
+  :root{--bg:#fff!important;--surface:#fff!important;--surface-2:#f2f4f6!important;--ink:#000!important;--muted:#444!important;--line:#bbb!important;--accent:#0a66c2!important;--power:#b86200!important;color-scheme:light!important}
+  /* browsers drop background colours when printing; the load bars, swatches and pills need them */
+  .meter .bar,.meter .fill,.swatch,.pill,.plan-wrap svg{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .meter .bar{background:#e8e8e8!important;border-color:#999!important}
+  .meter .fill{background:#17824a!important}.meter .fill.warn{background:#c98a00!important}.meter .fill.bad{background:#c2352c!important}
+  .meter .pct,td,th{color:#000!important}
+  .stat .v{white-space:normal;overflow:visible;font-size:20px}
+  th{background:#f0f0f0!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .pill{color:#000!important;border-color:#666!important}.pill.bk{color:#b86200!important;border-color:#b86200!important}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
 <div class="topbar">
   <h1>NovaStar Wall Calculator</h1>
-  <span class="sub">Data &amp; power routing · line loading · test cards · v1.2.0</span>
+  <span class="sub">Data &amp; power routing · line loading · test cards · v1.2.1</span>
   <span class="spacer"></span>
   <label class="proj-pick" aria-label="Project"><select id="projSel"></select></label>
   <button class="btn primary" id="btnNewProj" type="button">New project</button>
