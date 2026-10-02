@@ -1,0 +1,7 @@
+node_modules/
+dist/
+stage/
+*.dmg
+*.iso
+mac/app/index.html
+.DS_Store

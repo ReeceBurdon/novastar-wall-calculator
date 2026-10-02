@@ -1,0 +1,9 @@
+{
+  "name": "novastar-wall-calculator",
+  "productName": "NovaStar Wall Calculator",
+  "version": "1.0.0",
+  "description": "LED wall data and power routing, wiring plans and test cards for NovaStar processors.",
+  "main": "main.js",
+  "author": "Reece Burdon",
+  "license": "UNLICENSED"
+}
