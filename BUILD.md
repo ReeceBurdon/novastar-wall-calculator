@@ -8,6 +8,7 @@
 | Standalone file | The HTML as-is (prints and downloads work when not framed) |
 | PWA folder | Wrap in a proper `<head>` with manifest + service worker; swap the CDN muxer for local `mp4-muxer.js` |
 | Mac DMG (arm64) | Wrap like the PWA but with local fonts (Fontsource woff2) and a CSP; Electron shell below |
+| Windows installer (x64) | The same page as the Mac app, in a Tauri shell (`windows/`), built by GitHub Actions |
 
 Current version: **1.3.0** (2 Oct 2026).
 
@@ -25,6 +26,18 @@ Current version: **1.3.0** (2 Oct 2026).
 
 `mac/app/main.js` is the Electron main process. It handles the window, menus, external links, self-update from GitHub Pages and the live output window. `mac/app/preload.js` exposes `window.nswcDesktop` to the page, which lists displays and opens or closes the output.
 
+## Windows app (Tauri)
+
+`windows/` is the Windows shell. `src-tauri/src/main.rs` handles the window, menus, external links, both kinds of update and the live output window; `src-tauri/src/desktop.js` gives the page the same `window.nswcDesktop` bridge as the Mac app's `preload.js`, plus Ctrl+P, Ctrl+Shift+O and Esc on the output.
+
+- **Build:** `python3 tools/build_windows.py` runs `build_mac.py` and copies `docs/app/` into `windows/dist/`. Then `cd windows && npm ci && npx tauri build` on Windows. Normally you let GitHub Actions do it (`.github/workflows/windows.yml`): every pull request gets an unsigned test installer as a downloadable artifact.
+- **Release a new installer:** Actions › *Windows app* › *Run workflow*. It builds a signed `NovaStar-Wall-Calculator_<version>_x64-setup.exe`, attaches it to the `v<version>` release (creating it if needed, so the DMG can sit alongside it) and replaces `latest.json` on the `windows-updater` release. The installer version is the page's `app-version`.
+- **Page updates:** exactly like the Mac app. On launch (after 4 s) and via *Help › Check for Updates…* the app compares `docs/app/version.txt` on Pages with the page it's running, downloads `index.html` and `mp4-muxer.js` into `%APPDATA%\uk.co.reeceburdon.wallcalc\web` and offers a restart. Fonts and anything else missing come from the installer's copy.
+- **Installer updates:** the same check first asks the Tauri updater whether `latest.json` lists a newer installer. If so it offers *Install now*, which downloads it, checks its signature against the public key in `tauri.conf.json` and installs it in passive mode. Only needed when `windows/` changes; bump the page version for that release so the installer version goes up.
+- **Signing key:** updates are signed with a minisign key. The public key is in `tauri.conf.json`; the private key must be in the repository secret `TAURI_SIGNING_PRIVATE_KEY` (no password). Keep a copy of it somewhere safe: without it no installed copy will accept a new installer.
+- **Windows SmartScreen:** the installer isn't Authenticode-signed, so the first install shows *Windows protected your PC*; click *More info › Run anyway*. Updates install without the prompt.
+- **Storage:** saved projects live in WebView2's localStorage for the app's origin (`http://tauri.localhost`) under the same `nsWallCalc.*` keys. Don't change the bundle identifier or that origin, or saved work is left behind.
+
 ## Storage keys (localStorage)
 
 `nsWallCalc.output` (live output source, offset and display) and `nsWallCalc.rev` (bumped on every save; the output window watches it).
@@ -35,7 +48,7 @@ Current version: **1.3.0** (2 Oct 2026).
 
 1. Edit `novastar-wall-calculator.html`, bump the version here.
 2. Syntax-check the script and run it headless (Playwright) for the changed feature.
-3. Republish the artifact, rebuild the PWA folder and DMG.
+3. Republish the artifact, rebuild the PWA folder and DMG. Run the *Windows app* workflow if `windows/` changed.
 4. Update this Project's copy of the HTML and this file.
 
 ## Mac app updates

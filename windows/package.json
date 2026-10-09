@@ -1,0 +1,10 @@
+{
+  "name": "novastar-wall-calculator-windows",
+  "private": true,
+  "scripts": {
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

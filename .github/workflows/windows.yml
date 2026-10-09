@@ -1,0 +1,104 @@
+# Windows app (Tauri). Pull requests get an unsigned test build. Running it by hand (Actions › Windows app ›
+# Run workflow) builds a signed installer, attaches it to the v<version> release and updates latest.json on the
+# windows-updater release, which installed copies check for new installers.
+# Page-only releases need none of this: the app picks up the new page from GitHub Pages like the Mac app.
+name: Windows app
+
+on:
+  pull_request:
+    paths: ['windows/**', 'src/**', 'tools/**', 'mac/app/**', '.github/workflows/windows.yml']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the installer and update feed
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: windows/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: windows/src-tauri
+
+      - name: Build the page
+        run: python tools/build_windows.py
+
+      - name: Read the version
+        id: ver
+        run: |
+          v=$(python -c "import re;print(re.search(r'<meta name=\"app-version\" content=\"([\d.]+)\"',open('src/novastar-wall-calculator.html',encoding='utf-8').read()).group(1))")
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Version $v"
+
+      - name: Build the installer
+        working-directory: windows
+        env:
+          SIGNED: ${{ github.event_name == 'workflow_dispatch' }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          npm ci
+          if [ "$SIGNED" = true ] && [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "::error::Add the TAURI_SIGNING_PRIVATE_KEY repository secret first (see BUILD.md, Windows app)."; exit 1
+          fi
+          updater=$([ "$SIGNED" = true ] && echo true || echo false)
+          echo "{\"version\":\"${{ steps.ver.outputs.version }}\",\"bundle\":{\"createUpdaterArtifacts\":$updater}}" > ci.json
+          npx tauri build --config ci.json
+
+      - name: Collect the installer
+        id: out
+        run: |
+          v=${{ steps.ver.outputs.version }}
+          exe=$(ls windows/src-tauri/target/release/bundle/nsis/*-setup.exe | head -1)
+          name="NovaStar-Wall-Calculator_${v}_x64-setup.exe"
+          mkdir out && cp "$exe" "out/$name"
+          [ -f "$exe.sig" ] && cp "$exe.sig" "out/$name.sig"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          ls -l out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: out/
+
+      - name: Publish the release and update feed
+        if: github.event_name == 'workflow_dispatch' && inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NAME: ${{ steps.out.outputs.name }}
+          V: ${{ steps.ver.outputs.version }}
+        run: |
+          repo=${{ github.repository }}
+          gh release view "v$V" >/dev/null 2>&1 || gh release create "v$V" --target "$GITHUB_SHA" \
+            --title "NovaStar Wall Calculator $V" --notes "See the changelog in BUILD.md."
+          gh release upload "v$V" "out/$NAME" --clobber
+          python - <<'EOF'
+          import json,os,datetime
+          v,name,repo=os.environ['V'],os.environ['NAME'],os.environ['GITHUB_REPOSITORY']
+          json.dump({"version":v,"notes":"See the changelog in BUILD.md.",
+            "pub_date":datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+            "platforms":{"windows-x86_64":{"signature":open(f'out/{name}.sig').read().strip(),
+              "url":f"https://github.com/{repo}/releases/download/v{v}/{name}"}}},open('out/latest.json','w'),indent=2)
+          EOF
+          cat out/latest.json
+          gh release view windows-updater >/dev/null 2>&1 || gh release create windows-updater --target "$GITHUB_SHA" --prerelease \
+            --title "Windows update feed" --notes "Holds latest.json, which the installed Windows app checks for new installers. Keep this release."
+          gh release upload windows-updater out/latest.json --clobber
