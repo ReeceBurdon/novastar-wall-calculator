@@ -20,14 +20,17 @@ LED wall planning tool for NovaStar processors. Covers data and power routing, p
 | `src/novastar-wall-calculator.html` | **Master source.** One self-contained page; every build is generated from it |
 | `docs/` | Installable web app (PWA), served by GitHub Pages |
 | `mac/` | Electron shell for the macOS app (`app/main.js`, `app/package.json`, fonts, icon) |
+| `windows/` | Tauri shell for the Windows app (`src-tauri/`), built by `.github/workflows/windows.yml` |
 | `tools/build_app.py` | Rebuilds `docs/` from the source |
 | `tools/build_mac.py` | Rebuilds `mac/app/index.html` (local fonts, local MP4 encoder) from the source |
+| `tools/build_windows.py` | Rebuilds `windows/dist/` (the same page) for the Windows app |
 | `BUILD.md` | Full build notes, storage keys, release checklist and changelog |
 
 ## Using it
 
 - **Web app:** enable GitHub Pages (Settings → Pages → *Deploy from a branch*, `main`, `/docs`). Open the Pages link in Chrome or Edge and click **Install**.
 - **Mac app:** download the DMG from **Releases**, drag it into Applications, and on first launch use *System Settings → Privacy & Security → Open Anyway*.
+- **Windows app:** download `NovaStar-Wall-Calculator_<version>_x64-setup.exe` from **Releases** and run it. If SmartScreen says *Windows protected your PC*, click *More info → Run anyway*. It updates itself after that.
 
 ## Making changes
 

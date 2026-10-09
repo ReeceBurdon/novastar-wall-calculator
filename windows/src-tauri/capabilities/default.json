@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The calculator page and its live output window: events for the output bar, nothing else.",
+  "windows": ["main", "output"],
+  "permissions": ["core:default"]
+}
